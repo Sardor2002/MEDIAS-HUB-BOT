@@ -15,8 +15,8 @@ logging.basicConfig(level=logging.INFO)
 # =============================
 BOT_TOKEN = "8109609846:AAFb9vrMlzwRSOjb5l4HOHrITd8A3sPyszA"
 ADMIN_ID = 7764313855
-# Barqaror yuklash API manzili
-API_URL = "https://api.vkrdownloader.com/server?vkr="
+# Barqaror yuklash API (Cobalt Mirror)
+API_URL = "https://api.cobalt.tools/api/json"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USERS_FILE = os.path.join(BASE_DIR, "users.json")
@@ -48,7 +48,7 @@ users_data = load_data(USERS_FILE)
 force_join_list = load_data(FORCE_FILE)
 
 # =============================
-# MAJBURIY OBUNA TEKSHIRUVI
+# MAJBURIY OBUNA TEKSHIRUVI (100% ISHLAYDIGAN)
 # =============================
 async def check_sub(user_id):
     if not force_join_list: return True
@@ -56,7 +56,9 @@ async def check_sub(user_id):
         try:
             member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
             if member.status in ["left", "kicked"]: return False
-        except: continue
+        except Exception as e:
+            logging.error(f"Subscription check error for {channel_id}: {e}")
+            continue
     return True
 
 # =============================
@@ -73,7 +75,8 @@ async def start(message: types.Message):
     if not await check_sub(message.from_user.id):
         kb = []
         for fid, info in force_join_list.items():
-            kb.append([InlineKeyboardButton(text=info['name'], url=f"https://t.me/{info['name'].replace('@','')}")])
+            username = info['name'].replace('@', '')
+            kb.append([InlineKeyboardButton(text=info['name'], url=f"https://t.me/{username}")])
         kb.append([InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_sub")])
         return await message.answer("❌ Botdan foydalanish uchun kanallarga a'zo bo'ling:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
@@ -88,7 +91,8 @@ async def check_callback(call: types.CallbackQuery):
 
 @dp.message(F.text.startswith("http"))
 async def handle_link(message: types.Message):
-    if not await check_sub(message.from_user.id): return
+    if not await check_sub(message.from_user.id): 
+        return await message.answer("⚠️ Avval kanallarga a'zo bo'ling!")
     
     uid = message.from_user.id
     user_links[uid] = message.text.strip()
@@ -108,25 +112,28 @@ async def process_download(call: types.CallbackQuery):
 
     status_msg = await call.message.edit_text("⏳ *Yuklanmoqda...*", parse_mode="Markdown")
 
+    payload = {"url": url, "isAudioOnly": is_audio}
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_URL}{url}") as resp:
+            async with session.post(API_URL, json=payload, headers=headers) as resp:
                 data = await resp.json()
-                # API dan kelgan birinchi linkni olish
-                media_url = data['data']['downloads'][0]['url']
-                
-                if is_audio:
-                    await call.message.answer_audio(media_url, caption="✅ Audio yuklandi!")
+                if "url" in data:
+                    media_url = data['url']
+                    if is_audio:
+                        await call.message.answer_audio(media_url, caption="✅ Audio yuklandi!")
+                    else:
+                        await call.message.answer_video(media_url, caption="✅ Video yuklandi!")
+                    await status_msg.delete()
                 else:
-                    await call.message.answer_video(media_url, caption="✅ Video yuklandi!")
-                
-                await status_msg.delete()
+                    await status_msg.edit_text("❌ Xatolik: Linkdan media topilmadi.")
     except Exception as e:
         logging.error(f"Download error: {e}")
-        await status_msg.edit_text("❌ Xatolik: Video yuklab bo'lmadi. Link noto'g'ri bo'lishi mumkin.")
+        await status_msg.edit_text("❌ Server xatosi. Birozdan so'ng urinib ko'ring.")
 
 # =============================
-# ADMIN PANEL (SIZNING ASLIY KODINGIZ)
+# ADMIN PANEL
 # =============================
 def get_admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -149,7 +156,6 @@ async def adm_stats(call: types.CallbackQuery):
 async def list_users(call: types.CallbackQuery):
     kb = []
     sel = admin_selected_users.get(call.from_user.id, set())
-    # Faqat oxirgi 20ta foydalanuvchini chiqarish (xotira uchun)
     for uid, data in list(users_data.items())[-20:]:
         status = "✅" if uid in sel else "👤"
         row = [
@@ -178,6 +184,11 @@ async def delete_u(call: types.CallbackQuery):
     save_data(USERS_FILE, users_data)
     await list_users(call)
 
+@dp.callback_query(F.data == "send_bc")
+async def bc_start(call: types.CallbackQuery):
+    admin_waiting_broadcast.add(call.from_user.id)
+    await call.message.answer("⌨️ Xabar matnini (yoki rasmli xabar) yuboring:")
+
 @dp.message(lambda m: m.from_user.id in admin_waiting_broadcast)
 async def bc_logic(message: types.Message):
     admin_id = message.from_user.id
@@ -193,11 +204,6 @@ async def bc_logic(message: types.Message):
     await message.answer(f"✅ {sent} kishiga yuborildi.")
     admin_selected_users[admin_id] = set()
 
-@dp.callback_query(F.data == "send_bc")
-async def bc_start(call: types.CallbackQuery):
-    admin_waiting_broadcast.add(call.from_user.id)
-    await call.message.answer("⌨️ Xabar matnini yuboring:")
-
 @dp.callback_query(F.data == "adm_force")
 async def force_menu(call: types.CallbackQuery):
     kb = []
@@ -210,17 +216,22 @@ async def force_menu(call: types.CallbackQuery):
 @dp.callback_query(F.data == "add_f")
 async def add_f_start(call: types.CallbackQuery):
     admin_waiting_force.add(call.from_user.id)
-    await call.message.answer("📌 Format: `ID,USERNAME` (Masalan: `-100123,@kanal`)")
+    await call.message.answer("📌 Kanal usernameni yuboring:\n(Masalan: `@kanal_nomi`)")
 
 @dp.message(lambda m: m.from_user.id in admin_waiting_force)
 async def add_f_logic(message: types.Message):
     admin_waiting_force.remove(message.from_user.id)
+    username = message.text.strip()
+    if not username.startswith("@"):
+        return await message.answer("❌ Username `@` bilan boshlanishi kerak!")
+    
     try:
-        fid, name = message.text.split(",")
-        force_join_list[fid.strip()] = {"name": name.strip()}
+        chat = await bot.get_chat(username)
+        force_join_list[str(chat.id)] = {"name": username}
         save_data(FORCE_FILE, force_join_list)
-        await message.answer("✅ Kanal qo'shildi.")
-    except: await message.answer("❌ Xato format!")
+        await message.answer(f"✅ {username} muvaffaqiyatli qo'shildi!\nID: `{chat.id}`", parse_mode="Markdown")
+    except Exception as e:
+        await message.answer(f"❌ Xato! Bot bu kanalda admin ekanligini tekshiring.\nXato: {e}")
 
 @dp.callback_query(F.data.startswith("remove_f_"))
 async def remove_f(call: types.CallbackQuery):
