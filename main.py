@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 # =============================
 BOT_TOKEN = "8109609846:AAFb9vrMlzwRSOjb5l4HOHrITd8A3sPyszA"
 ADMIN_ID = 7764313855
-# Barqaror yuklash API (Cobalt Mirror)
+# Eng barqaror API manziliga almashtirildi
 API_URL = "https://api.cobalt.tools/api/json"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,7 +48,7 @@ users_data = load_data(USERS_FILE)
 force_join_list = load_data(FORCE_FILE)
 
 # =============================
-# MAJBURIY OBUNA TEKSHIRUVI (100% ISHLAYDIGAN)
+# MAJBURIY OBUNA TEKSHIRUVI
 # =============================
 async def check_sub(user_id):
     if not force_join_list: return True
@@ -57,7 +57,7 @@ async def check_sub(user_id):
             member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
             if member.status in ["left", "kicked"]: return False
         except Exception as e:
-            logging.error(f"Subscription check error for {channel_id}: {e}")
+            logging.error(f"Subscription error for {channel_id}: {e}")
             continue
     return True
 
@@ -112,13 +112,19 @@ async def process_download(call: types.CallbackQuery):
 
     status_msg = await call.message.edit_text("⏳ *Yuklanmoqda...*", parse_mode="Markdown")
 
-    payload = {"url": url, "isAudioOnly": is_audio}
+    payload = {
+        "url": url, 
+        "isAudioOnly": is_audio,
+        "vCodec": "h264", # Telegramda ochilishi uchun eng xavfsiz format
+        "aFormat": "mp3"
+    }
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(API_URL, json=payload, headers=headers) as resp:
                 data = await resp.json()
+                
                 if "url" in data:
                     media_url = data['url']
                     if is_audio:
@@ -126,11 +132,16 @@ async def process_download(call: types.CallbackQuery):
                     else:
                         await call.message.answer_video(media_url, caption="✅ Video yuklandi!")
                     await status_msg.delete()
+                elif data.get("status") == "picker":
+                    # TikTok slaydlar bo'lsa birinchi rasmni/videoni oladi
+                    media_url = data['picker'][0]['url']
+                    await call.message.answer_video(media_url, caption="✅ Video yuklandi!")
+                    await status_msg.delete()
                 else:
-                    await status_msg.edit_text("❌ Xatolik: Linkdan media topilmadi.")
+                    await status_msg.edit_text("❌ Xatolik: Media topilmadi. Link ochiq ekanligini tekshiring.")
     except Exception as e:
         logging.error(f"Download error: {e}")
-        await status_msg.edit_text("❌ Server xatosi. Birozdan so'ng urinib ko'ring.")
+        await status_msg.edit_text("❌ Server xatosi yoki API bloklangan. Birozdan so'ng urinib ko'ring.")
 
 # =============================
 # ADMIN PANEL
@@ -187,7 +198,7 @@ async def delete_u(call: types.CallbackQuery):
 @dp.callback_query(F.data == "send_bc")
 async def bc_start(call: types.CallbackQuery):
     admin_waiting_broadcast.add(call.from_user.id)
-    await call.message.answer("⌨️ Xabar matnini (yoki rasmli xabar) yuboring:")
+    await call.message.answer("⌨️ Xabar matnini yuboring:")
 
 @dp.message(lambda m: m.from_user.id in admin_waiting_broadcast)
 async def bc_logic(message: types.Message):
@@ -229,9 +240,9 @@ async def add_f_logic(message: types.Message):
         chat = await bot.get_chat(username)
         force_join_list[str(chat.id)] = {"name": username}
         save_data(FORCE_FILE, force_join_list)
-        await message.answer(f"✅ {username} muvaffaqiyatli qo'shildi!\nID: `{chat.id}`", parse_mode="Markdown")
+        await message.answer(f"✅ {username} muvaffaqiyatli qo'shildi!")
     except Exception as e:
-        await message.answer(f"❌ Xato! Bot bu kanalda admin ekanligini tekshiring.\nXato: {e}")
+        await message.answer(f"❌ Xato! Bot kanalda admin emas yoki username noto'g'ri.")
 
 @dp.callback_query(F.data.startswith("remove_f_"))
 async def remove_f(call: types.CallbackQuery):
