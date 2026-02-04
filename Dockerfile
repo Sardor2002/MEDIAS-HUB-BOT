@@ -1,17 +1,14 @@
-# Pythonning eng yengil va barqaror versiyasini tanlaymiz
+# Pythonning eng yengil versiyasini tanlaymiz
 FROM python:3.10-slim
 
-# Ishchi katalogni belgilaymiz
+# Ishchi katalogni yaratamiz
 WORKDIR /app
 
-# Kutubxonalar ro'yxatini nusxalaymiz
-COPY requirements.txt .
-
-# Kutubxonalarni o'rnatamiz (keshlarsiz, joyni tejash uchun)
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Barcha kodlarni nusxalaymiz
+# Barcha fayllarni nusxalaymiz
 COPY . .
 
-# Botni ishga tushirish buyrug'i
+# Kutubxonalarni o'rnatamiz
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Botni ishga tushiramiz
 CMD ["python", "main.py"]
